@@ -66,7 +66,7 @@ namespace moonbasepp {
             return false;
         }
         const auto productId = asJson["p:id"].get<std::string>();
-        if (productId != "tibia") { // license is for something other than tibia..
+        if (productId != m_context.productId) { // license is for something other than your product..
             return false;
         }
         const auto wasOnlineActivated = asJson["method"].get<std::string>() == "Online";
@@ -136,7 +136,7 @@ namespace moonbasepp {
             auto attemptNumber{ 0 };
             while (!tokenResp && attemptNumber < numTries) {
                 tokenResp = pollRequestUrl(requestAddr);
-                std::this_thread::sleep_for(std::chrono::seconds{ 5 });
+                std::this_thread::sleep_for(std::chrono::seconds{ secondsBetweenRetries });
                 ++attemptNumber;
             }
             if (!tokenResp) {
@@ -160,7 +160,7 @@ namespace moonbasepp {
             nlohmann::json j;
             j["id"] = m_fingerprint.base64;
             j["name"] = m_fingerprint.deviceName;
-            j["productId"] = "tibia";
+            j["productId"] = m_context.productId;
             j["format"] = "JWT";
             std::stringstream stream;
             stream << j;
