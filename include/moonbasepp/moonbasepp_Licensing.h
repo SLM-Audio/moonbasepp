@@ -34,10 +34,19 @@ namespace moonbasepp {
             std::filesystem::path expectedLicenseLocation;
             ValidationThresholds validationThresholds;
         };
+
         enum class ActivationResult {
             Success,
             Timeout,
             Fail
+        };
+
+        struct LicenseInfo final {
+            bool active;
+            bool trial;
+            bool offline;
+            bool onlineValidationPending;
+            bool offlineGracePeriodExceeded;
         };
 
         explicit Licensing(Context context);
@@ -57,17 +66,24 @@ namespace moonbasepp {
         // [[ Main or Background Thread, doesn't matter ]]
         [[nodiscard]] auto generateOfflineDeviceToken(const std::filesystem::path& destDirectory) const -> bool;
         // [[ Background Thread ]]
-        [[nodiscard]] auto receiveOfflineLicenseToken(const std::filesystem::path& licenseToken) const -> bool;
+        [[nodiscard]] auto receiveOfflineLicenseToken(const std::filesystem::path& licenseToken) -> bool;
         // [[ Any Thread ]]
-        [[nodiscard]] auto getIsLicenseActive() const -> bool;
+        [[nodiscard]] auto getLicenseInfo() const -> LicenseInfo;
 
     private:
         // [[ Background Thread ]]
-        auto check(const std::filesystem::path& toCheck) const -> bool;
+        auto check(const std::filesystem::path& toCheck) -> bool;
         Context m_context;
         DeviceFingerprint m_fingerprint;
         std::filesystem::path m_expectedLicenseFile;
-        std::atomic<bool> m_isLicenseActive{ false };
+
+        struct {
+            std::atomic<bool> isLicenseActive{ false };
+            std::atomic<bool> trial{ false };
+            std::atomic<bool> offlineActivated{ false };
+            std::atomic<bool> onlineValidationPending{ false };
+            std::atomic<bool> offlineGracePeriodExceeded{ false };
+        } m_licensingInfo;
         std::string m_activationUrl;
         std::string m_validationUrl;
     };
