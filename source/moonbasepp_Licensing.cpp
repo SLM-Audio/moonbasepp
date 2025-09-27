@@ -215,7 +215,7 @@ namespace moonbasepp {
         return check(m_expectedLicenseFile);
     }
 
-    auto Licensing::getLicenseInfo() const -> LicenseInfo {
+    auto Licensing::getLicenseStatus() const -> LicenseStatus {
         return {
             .active = m_licensingInfo.isLicenseActive.load(),
             .trial = m_licensingInfo.trial.load(),

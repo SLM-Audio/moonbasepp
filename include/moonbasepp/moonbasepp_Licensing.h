@@ -41,7 +41,7 @@ namespace moonbasepp {
             Fail
         };
 
-        struct LicenseInfo final {
+        struct LicenseStatus final {
             bool active;
             bool trial;
             bool offline;
@@ -68,7 +68,7 @@ namespace moonbasepp {
         // [[ Background Thread ]]
         [[nodiscard]] auto receiveOfflineLicenseToken(const std::filesystem::path& licenseToken) -> bool;
         // [[ Any Thread ]]
-        [[nodiscard]] auto getLicenseInfo() const -> LicenseInfo;
+        [[nodiscard]] auto getLicenseStatus() const -> LicenseStatus;
 
     private:
         // [[ Background Thread ]]
