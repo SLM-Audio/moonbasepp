@@ -43,7 +43,8 @@ namespace moonbasepp {
 
     Licensing::Licensing(Context context) : m_context(std::move(context)),
                                             m_activationUrl(fmt::format("{}/api/client/activations/{}/request", m_context.apiEndpointBase, m_context.productId)),
-                                            m_validationUrl(fmt::format("{}/api/client/licenses/{}/validate", m_context.apiEndpointBase, m_context.productId)) {
+                                            m_validationUrl(fmt::format("{}/api/client/licenses/{}/validate", m_context.apiEndpointBase, m_context.productId)),
+                                            m_deactivationUrl(fmt::format("{}/api/client/licenses/{}/revoke", m_context.apiEndpointBase, m_context.productId)) {
         if (!std::filesystem::exists(m_context.expectedLicenseLocation)) {
             std::filesystem::create_directory(m_context.expectedLicenseLocation);
         }
@@ -188,6 +189,26 @@ namespace moonbasepp {
             m_licensingInfo.isLicenseActive.store(false);
             return ActivationResult::Fail;
         }
+    }
+
+    auto Licensing::deactivate() -> bool {
+        if (!std::filesystem::exists(m_expectedLicenseFile)) {
+            return false;
+        }
+        std::ifstream inStream{ m_expectedLicenseFile, std::ios::in };
+        std::string token{ std::istreambuf_iterator<char>{ inStream }, std::istreambuf_iterator<char>() };
+        const cpr::Url endpoint{ m_deactivationUrl };
+        cpr::Header header{
+            { "Content-Type", "text/plain" }
+        };
+        cpr::Body body{ token };
+        const auto response = cpr::Post(endpoint, header, body);
+        if (response.status_code == 0 || response.status_code >= 400) {
+            return false;
+        }
+        std::filesystem::remove(m_expectedLicenseFile);
+        m_licensingInfo.isLicenseActive.store(false);
+        return true;
     }
 
     auto Licensing::generateOfflineDeviceToken(const std::filesystem::path& destDirectory) const -> bool {
