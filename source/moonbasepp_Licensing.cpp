@@ -32,6 +32,15 @@ namespace moonbasepp {
         return resp;
     }
 
+    static auto decodeToken(const std::string& content) -> std::optional<std::map<std::string, nlohmann::basic_json<>, std::less<>>> {
+        try {
+            const auto decoded = jwt::decode<jwt::traits::nlohmann_json>(content);
+            return decoded.get_payload_json();
+        } catch (...) {
+            return {};
+        }
+    };
+
     Licensing::Licensing(Context context) : m_context(std::move(context)),
                                             m_activationUrl(fmt::format("{}/api/client/activations/{}/request", m_context.apiEndpointBase, m_context.productId)),
                                             m_validationUrl(fmt::format("{}/api/client/licenses/{}/validate", m_context.apiEndpointBase, m_context.productId)) {
@@ -56,32 +65,42 @@ namespace moonbasepp {
         return true;
     }
 
-    auto Licensing::check(const std::filesystem::path& toCheck) const -> bool {
+    auto Licensing::check(const std::filesystem::path& toCheck) -> bool {
         std::ifstream inStream{ toCheck, std::ios::in };
         std::string token{ std::istreambuf_iterator<char>(inStream), std::istreambuf_iterator<char>() };
-        const auto decoded = jwt::decode<jwt::traits::nlohmann_json>(token);
-        auto asJson = decoded.get_payload_json();
-        const auto sig = asJson["sig"].get<std::string>();
+        auto asJsonOpt = decodeToken(token);
+        if (!asJsonOpt) {
+            return false;
+        }
+
+        auto& asJson = *asJsonOpt;
+        // populate the easy ones here...
+        m_licensingInfo.offlineActivated = asJson.at("method").get<std::string>() == "Offline";
+        m_licensingInfo.trial = asJson.at("trial").get<bool>();
+        m_licensingInfo.onlineValidationPending.store(false);
+        m_licensingInfo.offlineGracePeriodExceeded.store(false);
+
+        const auto sig = asJson.at("sig").get<std::string>();
         if (!compareFingerprint(m_fingerprint, sig)) { // more than 2 of the device fingerprint idents have changed
             return false;
         }
-        const auto productId = asJson["p:id"].get<std::string>();
+        const auto productId = asJson.at("p:id").get<std::string>();
         if (productId != m_context.productId) { // license is for something other than your product..
             return false;
         }
-        const auto wasOnlineActivated = asJson["method"].get<std::string>() == "Online";
-        if (!wasOnlineActivated) { // Can't revoke, so all good..
+        if (m_licensingInfo.offlineActivated) { // Can't revoke, so all good..
             return true;
         }
         const auto now = std::chrono::system_clock::now();
-        if (asJson["trial"].get<bool>()) { // this is a trial, so we need to check expiration
-            const auto trialExpiration = asJson["exp"].get<int>();
+        if (m_licensingInfo.trial) { // this is a trial, so we need to check expiration
+            const auto trialExpiration = asJson.at("exp").get<int>();
             const auto expTimePoint = std::chrono::system_clock::from_time_t(trialExpiration);
             if (expTimePoint < now) { // trial has expired...
+                m_licensingInfo.isLicenseActive.store(false);
                 return false;
             }
         }
-        const auto lastValidatedAt = asJson["validated"].get<int>();
+        const auto lastValidatedAt = asJson.at("validated").get<int>();
         const auto lastValidatedSecondsSinceEpoch = std::chrono::system_clock::from_time_t(lastValidatedAt);
         const auto delta = std::chrono::duration_cast<std::chrono::days>(now - lastValidatedSecondsSinceEpoch);
         return [&]() -> bool {
@@ -89,7 +108,11 @@ namespace moonbasepp {
                 return true;
             }
             if (!validate(m_validationUrl, m_expectedLicenseFile, token)) {
-                return delta <= std::chrono::days{ m_context.validationThresholds.gracePeriod };
+                const auto withinGracePeriod = delta <= std::chrono::days{ m_context.validationThresholds.gracePeriod };
+                m_licensingInfo.offlineActivated.store(false);
+                m_licensingInfo.onlineValidationPending.store(true);
+                m_licensingInfo.offlineGracePeriodExceeded.store(!withinGracePeriod);
+                return withinGracePeriod;
             }
             return true;
         }();
@@ -97,15 +120,20 @@ namespace moonbasepp {
 
     auto Licensing::checkForExisting() -> bool {
         if (!std::filesystem::exists(m_expectedLicenseFile)) { // no license on disk
-            m_isLicenseActive = false;
+            m_licensingInfo.isLicenseActive.store(false);
             return false;
         }
-        m_isLicenseActive = check(m_expectedLicenseFile);
-        return m_isLicenseActive;
+        m_licensingInfo.isLicenseActive = check(m_expectedLicenseFile);
+        return m_licensingInfo.isLicenseActive;
     }
 
     auto Licensing::requestActivation(int numRetries, int secondsBetweenRetries) -> Licensing::ActivationResult {
         try {
+
+            m_licensingInfo.offlineActivated.store(false);
+            m_licensingInfo.onlineValidationPending.store(false);
+            m_licensingInfo.offlineGracePeriodExceeded.store(false);
+
             cpr::Url endpoint{ m_activationUrl };
             cpr::Header header{
                 { "Content-Type", "application/json" }
@@ -140,16 +168,24 @@ namespace moonbasepp {
                 ++attemptNumber;
             }
             if (!tokenResp) {
+                m_licensingInfo.isLicenseActive.store(false);
                 return ActivationResult::Timeout;
             }
             const auto token = tokenResp->text;
-            m_isLicenseActive.store(true);
+            const auto decodedOpt = decodeToken(token);
+            if (!decodedOpt) {
+                m_licensingInfo.isLicenseActive.store(false);
+                return ActivationResult::Fail;
+            }
+            m_licensingInfo.isLicenseActive = true;
+            m_licensingInfo.trial = decodedOpt->at("trial").get<bool>();
             std::ofstream outStream{ m_expectedLicenseFile, std::ios::out };
             outStream << token;
             outStream.flush();
             return ActivationResult::Success;
         } catch (...) {
             assert(false);
+            m_licensingInfo.isLicenseActive.store(false);
             return ActivationResult::Fail;
         }
     }
@@ -174,13 +210,19 @@ namespace moonbasepp {
         }
     }
 
-    auto Licensing::receiveOfflineLicenseToken(const std::filesystem::path& licenseToken) const -> bool {
+    auto Licensing::receiveOfflineLicenseToken(const std::filesystem::path& licenseToken) -> bool {
         std::filesystem::copy(licenseToken, m_expectedLicenseFile);
         return check(m_expectedLicenseFile);
     }
 
-    auto Licensing::getIsLicenseActive() const -> bool {
-        return m_isLicenseActive.load();
+    auto Licensing::getLicenseStatus() const -> LicenseStatus {
+        return {
+            .active = m_licensingInfo.isLicenseActive.load(),
+            .trial = m_licensingInfo.trial.load(),
+            .offline = m_licensingInfo.offlineActivated.load(),
+            .onlineValidationPending = m_licensingInfo.onlineValidationPending.load(),
+            .offlineGracePeriodExceeded = m_licensingInfo.offlineGracePeriodExceeded.load()
+        };
     }
 
 
