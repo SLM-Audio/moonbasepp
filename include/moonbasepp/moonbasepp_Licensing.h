@@ -44,6 +44,7 @@ namespace moonbasepp {
         struct LicenseStatus final {
             bool active;
             bool trial;
+            int trialDaysRemaining;
             bool offline;
             bool onlineValidationPending;
             bool offlineGracePeriodExceeded;
@@ -65,10 +66,15 @@ namespace moonbasepp {
         [[nodiscard]] auto requestActivation(int numRetries, int secondsBetweenRetries) -> ActivationResult;
 
         [[nodiscard]] auto deactivate() -> bool;
+        /***
         // [[ Main or Background Thread, doesn't matter ]]
-        [[nodiscard]] auto generateOfflineDeviceToken(const std::filesystem::path& destDirectory) const -> bool;
+         * Make sure the dest file you supply has the .dt extension for moonbase to recognise it!
+         */
+        [[nodiscard]] auto generateOfflineDeviceToken(const std::filesystem::path& destFile) const -> bool;
         // [[ Background Thread ]]
         [[nodiscard]] auto receiveOfflineLicenseToken(const std::filesystem::path& licenseToken) -> bool;
+        // [[ Background Thread ]]
+        [[nodiscard]] auto receiveOfflineLicenseToken(const std::string& data) -> bool;
         // [[ Any Thread ]]
         [[nodiscard]] auto getLicenseStatus() const -> LicenseStatus;
 
@@ -82,6 +88,7 @@ namespace moonbasepp {
         struct {
             std::atomic<bool> isLicenseActive{ false };
             std::atomic<bool> trial{ false };
+            std::atomic<int> trialDaysRemaining{ -1 };
             std::atomic<bool> offlineActivated{ false };
             std::atomic<bool> onlineValidationPending{ false };
             std::atomic<bool> offlineGracePeriodExceeded{ false };

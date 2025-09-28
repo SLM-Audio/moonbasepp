@@ -41,6 +41,13 @@ namespace moonbasepp {
         }
     };
 
+    static auto getTrialDaysRemaining(int trialExpiration) -> int {
+        const auto now = std::chrono::system_clock::now();
+        const auto expTimePoint = std::chrono::system_clock::from_time_t(trialExpiration);
+        const auto deltaDays = std::chrono::duration_cast<std::chrono::days>(now - expTimePoint);
+        return deltaDays.count();
+    }
+
     Licensing::Licensing(Context context) : m_context(std::move(context)),
                                             m_activationUrl(fmt::format("{}/api/client/activations/{}/request", m_context.apiEndpointBase, m_context.productId)),
                                             m_validationUrl(fmt::format("{}/api/client/licenses/{}/validate", m_context.apiEndpointBase, m_context.productId)),
@@ -80,6 +87,7 @@ namespace moonbasepp {
         m_licensingInfo.trial = asJson.at("trial").get<bool>();
         m_licensingInfo.onlineValidationPending.store(false);
         m_licensingInfo.offlineGracePeriodExceeded.store(false);
+        m_licensingInfo.trialDaysRemaining.store(-1);
 
         const auto sig = asJson.at("sig").get<std::string>();
         if (!compareFingerprint(m_fingerprint, sig)) { // more than 2 of the device fingerprint idents have changed
@@ -96,6 +104,8 @@ namespace moonbasepp {
         if (m_licensingInfo.trial) { // this is a trial, so we need to check expiration
             const auto trialExpiration = asJson.at("exp").get<int>();
             const auto expTimePoint = std::chrono::system_clock::from_time_t(trialExpiration);
+            const auto deltaDays = std::chrono::duration_cast<std::chrono::days>(expTimePoint - now).count();
+            m_licensingInfo.trialDaysRemaining = deltaDays;
             if (expTimePoint < now) { // trial has expired...
                 m_licensingInfo.isLicenseActive.store(false);
                 return false;
@@ -134,6 +144,7 @@ namespace moonbasepp {
             m_licensingInfo.offlineActivated.store(false);
             m_licensingInfo.onlineValidationPending.store(false);
             m_licensingInfo.offlineGracePeriodExceeded.store(false);
+            m_licensingInfo.trialDaysRemaining.store(-1);
 
             cpr::Url endpoint{ m_activationUrl };
             cpr::Header header{
@@ -180,6 +191,10 @@ namespace moonbasepp {
             }
             m_licensingInfo.isLicenseActive = true;
             m_licensingInfo.trial = decodedOpt->at("trial").get<bool>();
+            if (m_licensingInfo.trial) {
+                m_licensingInfo.trialDaysRemaining = getTrialDaysRemaining(decodedOpt->at("exp").get<int>());
+            }
+
             std::ofstream outStream{ m_expectedLicenseFile, std::ios::out };
             outStream << token;
             outStream.flush();
@@ -211,9 +226,8 @@ namespace moonbasepp {
         return true;
     }
 
-    auto Licensing::generateOfflineDeviceToken(const std::filesystem::path& destDirectory) const -> bool {
+    auto Licensing::generateOfflineDeviceToken(const std::filesystem::path& destFile) const -> bool {
         try {
-            std::filesystem::path destFile = destDirectory / "OfflineActivationRequest.dt";
             nlohmann::json j;
             j["id"] = m_fingerprint.base64;
             j["name"] = m_fingerprint.deviceName;
@@ -233,13 +247,26 @@ namespace moonbasepp {
 
     auto Licensing::receiveOfflineLicenseToken(const std::filesystem::path& licenseToken) -> bool {
         std::filesystem::copy(licenseToken, m_expectedLicenseFile);
-        return check(m_expectedLicenseFile);
+        m_licensingInfo.isLicenseActive = check(m_expectedLicenseFile);
+        return m_licensingInfo.isLicenseActive;
+    }
+
+    auto Licensing::receiveOfflineLicenseToken(const std::string& data) -> bool {
+        if (!decodeToken(data)) {
+            return false;
+        }
+        std::ofstream outStream{ m_expectedLicenseFile, std::ios::out };
+        outStream << data;
+        outStream.flush();
+        m_licensingInfo.isLicenseActive = check(m_expectedLicenseFile);
+        return m_licensingInfo.isLicenseActive;
     }
 
     auto Licensing::getLicenseStatus() const -> LicenseStatus {
         return {
             .active = m_licensingInfo.isLicenseActive.load(),
             .trial = m_licensingInfo.trial.load(),
+            .trialDaysRemaining = m_licensingInfo.trialDaysRemaining.load(),
             .offline = m_licensingInfo.offlineActivated.load(),
             .onlineValidationPending = m_licensingInfo.onlineValidationPending.load(),
             .offlineGracePeriodExceeded = m_licensingInfo.offlineGracePeriodExceeded.load()
