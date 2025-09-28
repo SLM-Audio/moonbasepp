@@ -63,6 +63,8 @@ namespace moonbasepp {
          * @return ActivationResult::Success if successful, ActivationResult::Timeout if numRetries was exceeded, and ActivationResult::Fail if activation flat out failed
          */
         [[nodiscard]] auto requestActivation(int numRetries, int secondsBetweenRetries) -> ActivationResult;
+
+        [[nodiscard]] auto deactivate() -> bool;
         // [[ Main or Background Thread, doesn't matter ]]
         [[nodiscard]] auto generateOfflineDeviceToken(const std::filesystem::path& destDirectory) const -> bool;
         // [[ Background Thread ]]
@@ -86,6 +88,7 @@ namespace moonbasepp {
         } m_licensingInfo;
         std::string m_activationUrl;
         std::string m_validationUrl;
+        std::string m_deactivationUrl;
     };
 } // namespace moonbasepp
 #endif // MOONBASEPP_LICENSING_H
