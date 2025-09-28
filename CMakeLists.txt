@@ -1,7 +1,12 @@
 cmake_minimum_required(VERSION 3.5)
 project(moonbasepp VERSION 0.0.1)
 include(FetchContent)
-set(CPR_USE_SYSTEM_CURL ON)
+if(APPLE) # Or linux
+    set(CPR_USE_SYSTEM_CURL ON)
+else()
+    set(CPR_USE_SYSTEM_LIB_PSL OFF)
+    include(cmake/meson.cmake)
+endif()
 set(BUILD_SHARED_LIBS OFF)
 FetchContent_Declare(cpr
         GIT_REPOSITORY https://github.com/libcpr/cpr.git
