@@ -1,13 +1,14 @@
 //
 // Created by Syl Morrison on 17/09/2025.
 //
+#include "moonbasepp/moonbasepp_JWT.h"
+
+
 #include <moonbasepp/moonbasepp_Licensing.h>
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
-#include <jwt-cpp/traits/nlohmann-json/traits.h>
-#include <jwt-cpp/jwt.h>
-#include <cpp-base64/base64.h>
 #include <cpr/cpr.h>
+#include <cpp-base64/base64.h>
 
 #include <cassert>
 #include <sstream>
@@ -31,15 +32,6 @@ namespace moonbasepp {
         }
         return resp;
     }
-
-    static auto decodeToken(const std::string& content) -> std::optional<std::map<std::string, nlohmann::basic_json<>, std::less<>>> {
-        try {
-            const auto decoded = jwt::decode<jwt::traits::nlohmann_json>(content);
-            return decoded.get_payload_json();
-        } catch (...) {
-            return {};
-        }
-    };
 
     static auto getTrialDaysRemaining(int trialExpiration) -> int {
         const auto now = std::chrono::system_clock::now();
@@ -76,12 +68,14 @@ namespace moonbasepp {
     auto Licensing::check(const std::filesystem::path& toCheck) -> bool {
         std::ifstream inStream{ toCheck, std::ios::in };
         std::string token{ std::istreambuf_iterator<char>(inStream), std::istreambuf_iterator<char>() };
-        auto asJsonOpt = decodeToken(token);
-        if (!asJsonOpt) {
+        const auto jwt_opt = moonbasepp::jwt::decode(token);
+        if (!jwt_opt) {
             return false;
         }
-
-        auto& asJson = *asJsonOpt;
+        if (!jwt::verifySignature(m_context.publicKey.data(), *jwt_opt)) {
+            return false;
+        }
+        auto& asJson = jwt_opt->body;
         // populate the easy ones here...
         m_licensingInfo.offlineActivated = asJson.at("method").get<std::string>() == "Offline";
         m_licensingInfo.trial = asJson.at("trial").get<bool>();
@@ -184,15 +178,16 @@ namespace moonbasepp {
                 return ActivationResult::Timeout;
             }
             const auto token = tokenResp->text;
-            const auto decodedOpt = decodeToken(token);
-            if (!decodedOpt) {
+            const auto jwt_opt = jwt::decode(token);
+            if (!jwt_opt) {
                 m_licensingInfo.isLicenseActive.store(false);
                 return ActivationResult::Fail;
             }
             m_licensingInfo.isLicenseActive = true;
-            m_licensingInfo.trial = decodedOpt->at("trial").get<bool>();
+            const auto& body_json = jwt_opt->body;
+            m_licensingInfo.trial = body_json["trial"].get<bool>();
             if (m_licensingInfo.trial) {
-                m_licensingInfo.trialDaysRemaining = getTrialDaysRemaining(decodedOpt->at("exp").get<int>());
+                m_licensingInfo.trialDaysRemaining = getTrialDaysRemaining(body_json["exp"].get<int>());
             }
 
             std::ofstream outStream{ m_expectedLicenseFile, std::ios::out };
@@ -252,7 +247,7 @@ namespace moonbasepp {
     }
 
     auto Licensing::receiveOfflineLicenseToken(const std::string& data) -> bool {
-        if (!decodeToken(data)) {
+        if (!jwt::decode(data)) {
             return false;
         }
         std::ofstream outStream{ m_expectedLicenseFile, std::ios::out };
