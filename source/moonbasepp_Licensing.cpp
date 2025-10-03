@@ -1,18 +1,24 @@
 //
 // Created by Syl Morrison on 17/09/2025.
 //
+#include "moonbasepp/moonbasepp_JWT.h"
+
+
 #include <moonbasepp/moonbasepp_Licensing.h>
-#include <fmt/format.h>
 #include <nlohmann/json.hpp>
-#include <jwt-cpp/traits/nlohmann-json/traits.h>
-#include <jwt-cpp/jwt.h>
-#include <cpp-base64/base64.h>
 #include <cpr/cpr.h>
+#include <cpp-base64/base64.h>
 
 #include <cassert>
 #include <sstream>
 #include <iostream>
 #include <utility>
+
+#if __APPLE__
+#include <fmt/core.h>
+#else
+#include <format>
+#endif
 
 namespace moonbasepp {
 
@@ -32,15 +38,6 @@ namespace moonbasepp {
         return resp;
     }
 
-    static auto decodeToken(const std::string& content) -> std::optional<std::map<std::string, nlohmann::basic_json<>, std::less<>>> {
-        try {
-            const auto decoded = jwt::decode<jwt::traits::nlohmann_json>(content);
-            return decoded.get_payload_json();
-        } catch (...) {
-            return {};
-        }
-    };
-
     static auto getTrialDaysRemaining(int trialExpiration) -> int {
         const auto now = std::chrono::system_clock::now();
         const auto expTimePoint = std::chrono::system_clock::from_time_t(trialExpiration);
@@ -48,10 +45,29 @@ namespace moonbasepp {
         return deltaDays.count();
     }
 
+#if __APPLE__
+    constexpr static auto s_openWebpageCommand = "open";
+
+    template <typename... T>
+    static auto formatImpl(fmt::format_string<T...> fmtstr, T&&... args) -> std::string {
+        return fmt::format(fmtstr, args...);
+    }
+
+#elif defined(_MSC_VER)
+    constexpr static auto s_openWebpageCommand = "start";
+
+    template<typename ...T>
+    static auto formatImpl(std::format_string<T...> toFormat, T&&... args) -> std::string {
+        return std::format(toFormat, args...);
+    }
+
+#else
+    static_assert(false);
+#endif
     Licensing::Licensing(Context context) : m_context(std::move(context)),
-                                            m_activationUrl(fmt::format("{}/api/client/activations/{}/request", m_context.apiEndpointBase, m_context.productId)),
-                                            m_validationUrl(fmt::format("{}/api/client/licenses/{}/validate", m_context.apiEndpointBase, m_context.productId)),
-                                            m_deactivationUrl(fmt::format("{}/api/client/licenses/{}/revoke", m_context.apiEndpointBase, m_context.productId)) {
+                                            m_activationUrl(formatImpl("{}/api/client/activations/{}/request", m_context.apiEndpointBase, m_context.productId)),
+                                            m_validationUrl(formatImpl("{}/api/client/licenses/{}/validate", m_context.apiEndpointBase, m_context.productId)),
+                                            m_deactivationUrl(formatImpl("{}/api/client/licenses/{}/revoke", m_context.apiEndpointBase, m_context.productId)) {
         if (!std::filesystem::exists(m_context.expectedLicenseLocation)) {
             std::filesystem::create_directory(m_context.expectedLicenseLocation);
         }
@@ -76,12 +92,14 @@ namespace moonbasepp {
     auto Licensing::check(const std::filesystem::path& toCheck) -> bool {
         std::ifstream inStream{ toCheck, std::ios::in };
         std::string token{ std::istreambuf_iterator<char>(inStream), std::istreambuf_iterator<char>() };
-        auto asJsonOpt = decodeToken(token);
-        if (!asJsonOpt) {
+        const auto jwt_opt = moonbasepp::jwt::decode(token);
+        if (!jwt_opt) {
             return false;
         }
-
-        auto& asJson = *asJsonOpt;
+        if (!jwt::verifySignature(m_context.publicKey.data(), *jwt_opt)) {
+            return false;
+        }
+        auto& asJson = jwt_opt->body;
         // populate the easy ones here...
         m_licensingInfo.offlineActivated = asJson.at("method").get<std::string>() == "Offline";
         m_licensingInfo.trial = asJson.at("trial").get<bool>();
@@ -169,7 +187,7 @@ namespace moonbasepp {
             nlohmann::json j = nlohmann::json::parse(response.text);
             const auto requestAddr = j["request"].get<std::string>();
             const auto browserAddr = j["browser"].get<std::string>();
-            const auto terminalCommand = fmt::format("open {}", browserAddr);
+            const auto terminalCommand = formatImpl("{} {}", s_openWebpageCommand, browserAddr);
             system(terminalCommand.c_str());
             std::optional<cpr::Response> tokenResp;
             const auto numTries = numRetries / secondsBetweenRetries;
@@ -184,15 +202,16 @@ namespace moonbasepp {
                 return ActivationResult::Timeout;
             }
             const auto token = tokenResp->text;
-            const auto decodedOpt = decodeToken(token);
-            if (!decodedOpt) {
+            const auto jwt_opt = jwt::decode(token);
+            if (!jwt_opt) {
                 m_licensingInfo.isLicenseActive.store(false);
                 return ActivationResult::Fail;
             }
             m_licensingInfo.isLicenseActive = true;
-            m_licensingInfo.trial = decodedOpt->at("trial").get<bool>();
+            const auto& body_json = jwt_opt->body;
+            m_licensingInfo.trial = body_json["trial"].get<bool>();
             if (m_licensingInfo.trial) {
-                m_licensingInfo.trialDaysRemaining = getTrialDaysRemaining(decodedOpt->at("exp").get<int>());
+                m_licensingInfo.trialDaysRemaining = getTrialDaysRemaining(body_json["exp"].get<int>());
             }
 
             std::ofstream outStream{ m_expectedLicenseFile, std::ios::out };
@@ -252,7 +271,7 @@ namespace moonbasepp {
     }
 
     auto Licensing::receiveOfflineLicenseToken(const std::string& data) -> bool {
-        if (!decodeToken(data)) {
+        if (!jwt::decode(data)) {
             return false;
         }
         std::ofstream outStream{ m_expectedLicenseFile, std::ios::out };

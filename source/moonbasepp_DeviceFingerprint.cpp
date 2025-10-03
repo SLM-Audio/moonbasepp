@@ -13,9 +13,15 @@
 #include <ifaddrs.h>
 #include <net/if_types.h>
 #include <mach-o/arch.h>
+#else if defined(_MSC_VER)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <intrin.h>
+#include <iphlpapi.h>
 #endif
 #include <iostream>
 #include <cassert>
+#include <optional>
 
 namespace moonbasepp {
 
@@ -107,6 +113,87 @@ namespace moonbasepp {
         };
     }
 
+#elif defined(_MSC_VER)
+
+    static auto getMachineName() -> std::string {
+        static char computerName[1024];
+        DWORD size{ 1024 };
+        GetComputerName(computerName, &size);
+        return std::string{ computerName, size };
+    }
+
+    static auto hashMacAddress() -> std::uint16_t {
+        std::uint16_t mac1{}, mac2{};
+        const auto hash = [](PIP_ADAPTER_INFO info) -> std::uint16_t {
+            std::uint16_t res{ 0 };
+            for (auto i = 0UL; i < info->AddressLength; ++i) {
+                res += (info->Address[i] << ((i & 1) * 8));
+            }
+            return res;
+        };
+        // Because on windows a mac addr seems to be a uint16_t, rather than combining the two via shifts like on macOS, we're gonna bitwise& them as is
+        IP_ADAPTER_INFO adapterInfo[32];
+        DWORD dwBufLen = sizeof(adapterInfo);
+        DWORD status = GetAdaptersInfo(adapterInfo, &dwBufLen);
+        if (status != ERROR_SUCCESS) {
+            assert(false);
+            return {};
+        }
+        PIP_ADAPTER_INFO pAdapterInfo = adapterInfo;
+        mac1 = hash(pAdapterInfo);
+        if (pAdapterInfo->Next) {
+            mac2 = hash(pAdapterInfo->Next);
+        }
+        const std::uint16_t combined = mac1 & mac2;
+        return combined;
+    }
+
+    static auto getVolumeHash() -> std::uint8_t {
+        // Also awkward, this gives us a uint16_t - we need u8 for macOS parity - soooo uhhhh what about just taking the bottom 8 ? <imp emoji goes here>
+        DWORD serialNum{ 0 };
+        GetVolumeInformation("c:\\", NULL, 0, &serialNum, NULL, NULL, NULL, 0);
+        const auto hash = static_cast<std::uint8_t>((serialNum + (serialNum >> 8)) & 0xFF);
+        return hash;
+    }
+
+    static auto getCPUHash() -> std::uint8_t {
+        int cpuInfo[4] = { 0, 0, 0, 0 };
+        __cpuid(cpuInfo, 0);
+        std::uint16_t hash{ 0 };
+        auto* ptr = reinterpret_cast<std::uint16_t*>(&cpuInfo[0]);
+        for (auto i = 0; i < 8; ++i) {
+            hash += ptr[i];
+        }
+        return hash & 0xFF;
+    }
+
+    auto getFingerprint() -> DeviceFingerprint {
+        const auto machineName = getMachineName();
+        const auto cpuHash = getCPUHash();
+        const auto volumeHash = getVolumeHash();
+        const auto macAddrHash = hashMacAddress();
+        const auto fingerprint = [&]() -> std::uint32_t {
+            std::uint32_t res{ 0x0 };
+            res |= (cpuHash << 24);
+            res |= (volumeHash << 16);
+            res |= macAddrHash;
+            return res;
+        }();
+        auto asbase64 = base64_encode(std::to_string(fingerprint));
+        return {
+            .deviceName = machineName,
+            .cpuHash = cpuHash,
+            .volumeHash = volumeHash,
+            .macAddrHash = macAddrHash,
+            .fingerprint = fingerprint,
+            .base64 = asbase64
+        };
+    }
+
+
+#else
+    static_assert(false); // TODO: SUPPORT OTHER OPERATING SYSTEMS
+#endif
     auto compareFingerprint(const DeviceFingerprint& cachedFingerprint, std::string base64ToCompare) -> bool {
         try {
             std::uint32_t decoded = std::stoi(base64_decode(base64ToCompare));
@@ -133,7 +220,4 @@ namespace moonbasepp {
             return false;
         }
     }
-#else
-    static_assert(false); // TODO: SUPPORT OTHER OPERATING SYSTEMS
-#endif
 } // namespace moonbasepp

@@ -1,8 +1,31 @@
 cmake_minimum_required(VERSION 3.5)
 project(moonbasepp VERSION 0.0.1)
+set(CMAKE_CXX_STANDARD 20)
 include(FetchContent)
-set(CPR_USE_SYSTEM_CURL ON)
+if (APPLE) # Or linux
+    set(CPR_USE_SYSTEM_CURL ON)
+    FetchContent_Declare(fmt
+            GIT_REPOSITORY https://github.com/fmtlib/fmt.git
+            GIT_TAG 12.0.0
+            GIT_SHALLOW ON
+    )
+    FetchContent_MakeAvailable(fmt)
+    set(MOONBASEPP_EXTRA_LIBRARIES fmt::fmt)
+
+else ()
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    set(CPR_USE_SYSTEM_LIB_PSL OFF)
+    include(cmake/meson.cmake)
+    set(MOONBASEPP_EXTRA_LIBRARIES iphlpapi)
+endif ()
 set(BUILD_SHARED_LIBS OFF)
+
+FetchContent_Declare(mbedtls
+        URL https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.4/mbedtls-3.6.4.tar.bz2
+        URL_HASH SHA256=ec35b18a6c593cf98c3e30db8b98ff93e8940a8c4e690e66b41dfc011d678110
+)
+FetchContent_MakeAvailable(mbedtls)
+
 FetchContent_Declare(cpr
         GIT_REPOSITORY https://github.com/libcpr/cpr.git
         GIT_TAG 1.12.0
@@ -23,30 +46,14 @@ FetchContent_Declare(json
 )
 FetchContent_MakeAvailable(json)
 
-FetchContent_Declare(jwt-cpp
-        GIT_REPOSITORY https://github.com/Thalhammer/jwt-cpp.git
-        GIT_TAG v0.7.1
-        GIT_SHALLOW ON
-)
-set(JWT_BUILD_EXAMPLES OFF)
-set(JWT_BUILD_TESTS OFF)
-set(JWT_DISABLE_PICOJSON ON)
-FetchContent_MakeAvailable(jwt-cpp)
-
-FetchContent_Declare(fmt
-        GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-        GIT_TAG 12.0.0
-        GIT_SHALLOW ON
-)
-FetchContent_MakeAvailable(fmt)
-
 add_library(moonbasepp STATIC
         ${CMAKE_CURRENT_SOURCE_DIR}/source/moonbasepp_DeviceFingerprint.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/source/moonbasepp_Licensing.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/source/moonbasepp_JWT.cpp
 )
 
 add_library(slma::moonbasepp ALIAS moonbasepp)
 
 target_include_directories(moonbasepp PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(moonbasepp PRIVATE cpr::cpr cpp-base64 jwt-cpp nlohmann_json fmt::fmt)
+target_link_libraries(moonbasepp PRIVATE cpr::cpr cpp-base64 nlohmann_json MbedTLS::mbedtls ${MOONBASEPP_EXTRA_LIBRARIES})
 

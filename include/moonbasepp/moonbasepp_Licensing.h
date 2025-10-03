@@ -30,6 +30,8 @@ namespace moonbasepp {
             std::string_view productId;
             /// eg https://your-company.api.moonbase.sh
             std::string_view apiEndpointBase;
+            /// The public key provided on your moonbase product page
+            std::string_view publicKey;
             /// Path to the location you want your license to be stored at
             std::filesystem::path expectedLicenseLocation;
             ValidationThresholds validationThresholds;
