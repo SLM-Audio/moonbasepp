@@ -33,7 +33,7 @@ FetchContent_Declare(cpr
 )
 FetchContent_MakeAvailable(cpr)
 FetchContent_Declare(cpp-base64
-        GIT_REPOSITORY git@github.com:SLM-Audio/cpp-base64.git
+        GIT_REPOSITORY https://github.com/SLM-Audio/cpp-base64.git
         GIT_TAG master
         GIT_SHALLOW ON
 )
