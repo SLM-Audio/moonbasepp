@@ -4,6 +4,14 @@ set(CMAKE_CXX_STANDARD 20)
 include(FetchContent)
 if (APPLE) # Or linux
     set(CPR_USE_SYSTEM_CURL ON)
+    FetchContent_Declare(fmt
+            GIT_REPOSITORY https://github.com/fmtlib/fmt.git
+            GIT_TAG 12.0.0
+            GIT_SHALLOW ON
+    )
+    FetchContent_MakeAvailable(fmt)
+    set(MOONBASEPP_EXTRA_LIBRARIES fmt::fmt)
+
 else ()
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     set(CPR_USE_SYSTEM_LIB_PSL OFF)

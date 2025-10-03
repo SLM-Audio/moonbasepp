@@ -14,6 +14,12 @@
 #include <iostream>
 #include <utility>
 
+#if __APPLE__
+#include <fmt/core.h>
+#else
+#include <format>
+#endif
+
 namespace moonbasepp {
 
     static auto pollRequestUrl(std::string_view url) -> std::optional<cpr::Response> {
@@ -41,16 +47,27 @@ namespace moonbasepp {
 
 #if __APPLE__
     constexpr static auto s_openWebpageCommand = "open";
+
+    template <typename... T>
+    static auto formatImpl(fmt::format_string<T...> fmtstr, T&&... args) -> std::string {
+        return fmt::format(fmtstr, args...);
+    }
+
 #elif defined(_MSC_VER)
     constexpr static auto s_openWebpageCommand = "start";
+
+    template<typename ...T>
+    static auto formatImpl(std::format_string<T...> toFormat, T&&... args) -> std::string {
+        return std::format(toFormat, args...);
+    }
+
 #else
     static_assert(false);
 #endif
-
     Licensing::Licensing(Context context) : m_context(std::move(context)),
-                                            m_activationUrl(std::format("{}/api/client/activations/{}/request", m_context.apiEndpointBase, m_context.productId)),
-                                            m_validationUrl(std::format("{}/api/client/licenses/{}/validate", m_context.apiEndpointBase, m_context.productId)),
-                                            m_deactivationUrl(std::format("{}/api/client/licenses/{}/revoke", m_context.apiEndpointBase, m_context.productId)) {
+                                            m_activationUrl(formatImpl("{}/api/client/activations/{}/request", m_context.apiEndpointBase, m_context.productId)),
+                                            m_validationUrl(formatImpl("{}/api/client/licenses/{}/validate", m_context.apiEndpointBase, m_context.productId)),
+                                            m_deactivationUrl(formatImpl("{}/api/client/licenses/{}/revoke", m_context.apiEndpointBase, m_context.productId)) {
         if (!std::filesystem::exists(m_context.expectedLicenseLocation)) {
             std::filesystem::create_directory(m_context.expectedLicenseLocation);
         }
@@ -170,7 +187,7 @@ namespace moonbasepp {
             nlohmann::json j = nlohmann::json::parse(response.text);
             const auto requestAddr = j["request"].get<std::string>();
             const auto browserAddr = j["browser"].get<std::string>();
-            const auto terminalCommand = std::format("{} {}", s_openWebpageCommand, browserAddr);
+            const auto terminalCommand = formatImpl("{} {}", s_openWebpageCommand, browserAddr);
             system(terminalCommand.c_str());
             std::optional<cpr::Response> tokenResp;
             const auto numTries = numRetries / secondsBetweenRetries;
