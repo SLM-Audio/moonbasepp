@@ -231,6 +231,7 @@ namespace moonbasepp {
         }
         std::ifstream inStream{ m_expectedLicenseFile, std::ios::in };
         std::string token{ std::istreambuf_iterator<char>{ inStream }, std::istreambuf_iterator<char>() };
+        inStream.close();
         const cpr::Url endpoint{ m_deactivationUrl };
         cpr::Header header{
             { "Content-Type", "text/plain" }
@@ -240,7 +241,16 @@ namespace moonbasepp {
         if (response.status_code == 0 || response.status_code >= 400) {
             return false;
         }
-        std::filesystem::remove(m_expectedLicenseFile);
+        try {
+            if (!std::filesystem::remove(m_expectedLicenseFile)) {
+                assert(false); // This shouldn't happen - remove returns false if the file didn't exist...
+                return false;
+            }
+        }
+        catch (std::exception &e) {
+            assert(false); // This also shouldnt happen, some other fs error?
+            return false;
+        }
         m_licensingInfo.isLicenseActive.store(false);
         return true;
     }
