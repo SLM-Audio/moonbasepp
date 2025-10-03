@@ -2,12 +2,14 @@ cmake_minimum_required(VERSION 3.5)
 project(moonbasepp VERSION 0.0.1)
 set(CMAKE_CXX_STANDARD 20)
 include(FetchContent)
-if(APPLE) # Or linux
+if (APPLE) # Or linux
     set(CPR_USE_SYSTEM_CURL ON)
-else()
+else ()
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     set(CPR_USE_SYSTEM_LIB_PSL OFF)
     include(cmake/meson.cmake)
-endif()
+    set(MOONBASEPP_EXTRA_LIBRARIES iphlpapi)
+endif ()
 set(BUILD_SHARED_LIBS OFF)
 
 FetchContent_Declare(mbedtls
@@ -36,13 +38,6 @@ FetchContent_Declare(json
 )
 FetchContent_MakeAvailable(json)
 
-FetchContent_Declare(fmt
-        GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-        GIT_TAG 12.0.0
-        GIT_SHALLOW ON
-)
-FetchContent_MakeAvailable(fmt)
-
 add_library(moonbasepp STATIC
         ${CMAKE_CURRENT_SOURCE_DIR}/source/moonbasepp_DeviceFingerprint.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/source/moonbasepp_Licensing.cpp
@@ -52,5 +47,5 @@ add_library(moonbasepp STATIC
 add_library(slma::moonbasepp ALIAS moonbasepp)
 
 target_include_directories(moonbasepp PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(moonbasepp PRIVATE cpr::cpr cpp-base64 nlohmann_json fmt::fmt MbedTLS::mbedtls)
+target_link_libraries(moonbasepp PRIVATE cpr::cpr cpp-base64 nlohmann_json MbedTLS::mbedtls ${MOONBASEPP_EXTRA_LIBRARIES})
 

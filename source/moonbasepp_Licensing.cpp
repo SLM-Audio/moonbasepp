@@ -5,7 +5,6 @@
 
 
 #include <moonbasepp/moonbasepp_Licensing.h>
-#include <fmt/format.h>
 #include <nlohmann/json.hpp>
 #include <cpr/cpr.h>
 #include <cpp-base64/base64.h>
@@ -40,10 +39,18 @@ namespace moonbasepp {
         return deltaDays.count();
     }
 
+#if __APPLE__
+    constexpr static auto s_openWebpageCommand = "open";
+#elif defined(_MSC_VER)
+    constexpr static auto s_openWebpageCommand = "start";
+#else
+    static_assert(false);
+#endif
+
     Licensing::Licensing(Context context) : m_context(std::move(context)),
-                                            m_activationUrl(fmt::format("{}/api/client/activations/{}/request", m_context.apiEndpointBase, m_context.productId)),
-                                            m_validationUrl(fmt::format("{}/api/client/licenses/{}/validate", m_context.apiEndpointBase, m_context.productId)),
-                                            m_deactivationUrl(fmt::format("{}/api/client/licenses/{}/revoke", m_context.apiEndpointBase, m_context.productId)) {
+                                            m_activationUrl(std::format("{}/api/client/activations/{}/request", m_context.apiEndpointBase, m_context.productId)),
+                                            m_validationUrl(std::format("{}/api/client/licenses/{}/validate", m_context.apiEndpointBase, m_context.productId)),
+                                            m_deactivationUrl(std::format("{}/api/client/licenses/{}/revoke", m_context.apiEndpointBase, m_context.productId)) {
         if (!std::filesystem::exists(m_context.expectedLicenseLocation)) {
             std::filesystem::create_directory(m_context.expectedLicenseLocation);
         }
@@ -163,7 +170,7 @@ namespace moonbasepp {
             nlohmann::json j = nlohmann::json::parse(response.text);
             const auto requestAddr = j["request"].get<std::string>();
             const auto browserAddr = j["browser"].get<std::string>();
-            const auto terminalCommand = fmt::format("open {}", browserAddr);
+            const auto terminalCommand = std::format("{} {}", s_openWebpageCommand, browserAddr);
             system(terminalCommand.c_str());
             std::optional<cpr::Response> tokenResp;
             const auto numTries = numRetries / secondsBetweenRetries;
