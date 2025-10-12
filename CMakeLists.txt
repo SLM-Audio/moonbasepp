@@ -6,11 +6,11 @@ if (APPLE) # Or linux
     set(CPR_USE_SYSTEM_CURL ON)
     FetchContent_Declare(fmt
             GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-            GIT_TAG 12.0.0
+            GIT_TAG 11.0.2
             GIT_SHALLOW ON
     )
     FetchContent_MakeAvailable(fmt)
-    set(MOONBASEPP_EXTRA_LIBRARIES fmt::fmt)
+    set(MOONBASEPP_EXTRA_LIBRARIES fmt::fmt-header-only)
 
 else ()
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
