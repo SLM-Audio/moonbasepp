@@ -21,8 +21,8 @@ namespace moonbasepp {
         struct ValidationThresholds final {
             /// Within this time period, online validation won't even be attempted
             int allowedDaysWithoutValidation; // eg 2
-            /// Within this time period, we do try to validate, but upon failure, don't report unlicensed until it's been exceeded
-            int gracePeriod; // eg 30
+            /// Within this time period, we do try to validate, but upon failure, don't report unlicensed until it's been exceeded. If nullopt, don't report unlicensed even if exceeded
+            std::optional<int> gracePeriod; // eg 30
         };
 
         struct Context final {

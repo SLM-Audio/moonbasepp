@@ -56,7 +56,7 @@ namespace moonbasepp {
 #elif defined(_MSC_VER)
     constexpr static auto s_openWebpageCommand = "start";
 
-    template<typename ...T>
+    template <typename... T>
     static auto formatImpl(std::format_string<T...> toFormat, T&&... args) -> std::string {
         return std::format(toFormat, args...);
     }
@@ -137,12 +137,15 @@ namespace moonbasepp {
                 return true;
             }
             if (!validate(m_validationUrl, m_expectedLicenseFile, token)) {
-                const auto withinGracePeriod = delta <= std::chrono::days{ m_context.validationThresholds.gracePeriod };
                 m_licensingInfo.offlineActivated.store(false);
                 m_licensingInfo.onlineValidationPending.store(true);
-                m_licensingInfo.offlineGracePeriodExceeded.store(!withinGracePeriod);
-                return withinGracePeriod;
+                if (m_context.validationThresholds.gracePeriod) {
+                    const auto withinGracePeriod = delta <= std::chrono::days{ m_context.validationThresholds.gracePeriod.value() };
+                    m_licensingInfo.offlineGracePeriodExceeded.store(!withinGracePeriod);
+                    return withinGracePeriod;
+                }
             }
+            m_licensingInfo.offlineGracePeriodExceeded.store(false);
             return true;
         }();
     }
@@ -246,8 +249,7 @@ namespace moonbasepp {
                 assert(false); // This shouldn't happen - remove returns false if the file didn't exist...
                 return false;
             }
-        }
-        catch (std::exception &e) {
+        } catch (std::exception& e) {
             assert(false); // This also shouldnt happen, some other fs error?
             return false;
         }
