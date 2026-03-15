@@ -56,6 +56,12 @@ namespace moonbasepp {
 
         // [[ Background Thread ]]
         [[nodiscard]] auto checkForExisting() -> bool;
+
+        struct ActivationContext final {
+            int numRetries;
+            double secondsBetweenRetries;
+            std::atomic<bool>& cancelToken;
+        };
         /***
          * [[ Background Thread ]]
          * In-Browser activation flow - attempts to direct the user to their browser to activate their license,
@@ -65,7 +71,7 @@ namespace moonbasepp {
          * @param secondsBetweenRetries The time in seconds between each retry
          * @return ActivationResult::Success if successful, ActivationResult::Timeout if numRetries was exceeded, and ActivationResult::Fail if activation flat out failed
          */
-        [[nodiscard]] auto requestActivation(int numRetries, int secondsBetweenRetries) -> ActivationResult;
+        [[nodiscard]] auto requestActivation(ActivationContext ctx) -> ActivationResult;
 
         [[nodiscard]] auto deactivate() -> bool;
         /***
@@ -86,7 +92,6 @@ namespace moonbasepp {
         Context m_context;
         DeviceFingerprint m_fingerprint;
         std::filesystem::path m_expectedLicenseFile;
-
         struct {
             std::atomic<bool> isLicenseActive{ false };
             std::atomic<bool> trial{ false };
