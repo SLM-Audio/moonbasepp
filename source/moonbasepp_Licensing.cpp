@@ -55,9 +55,6 @@ namespace moonbasepp {
     }
 
 #elif defined(_MSC_VER)
-#ifdef max
-#undef max
-#endif
     constexpr static auto s_openWebpageCommand = "start";
 
     template <typename... T>
