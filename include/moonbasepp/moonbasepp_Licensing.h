@@ -57,18 +57,27 @@ namespace moonbasepp {
         // [[ Background Thread ]]
         [[nodiscard]] auto checkForExisting() -> bool;
 
+        /**
+         * \brief A struct containing the params needed for an activation request.
+         */
         struct ActivationContext final {
+            /// The number of requests to send to the activation server. If -1, will run until either activation is successful, or activation is cancelled via the cancel token.
             int numRetries;
+            /// Time in seconds between retries.
             double secondsBetweenRetries;
+            /**
+             * A ref to an atomic bool for use cancelling activation.
+             * When the atomic's value is set to true, if the activation flow is still querying the moonbase api, the loop will be escaped on next request, and the token will be reset to false for reuse.
+             */
             std::atomic<bool>& cancelToken;
         };
+
         /***
          * [[ Background Thread ]]
          * In-Browser activation flow - attempts to direct the user to their browser to activate their license,
          * and then polls the endpoint to receive the token once activation has been completed.
          * Make sure to call this on a background thread, as it invokes `std::this_thread::sleep_for()` during the retry loop
-         * @param numRetries The amount of times to query the request endpoint after directing the user to their browser
-         * @param secondsBetweenRetries The time in seconds between each retry
+         * @param ctx An activation context specifying the desired timeouts, etc
          * @return ActivationResult::Success if successful, ActivationResult::Timeout if numRetries was exceeded, and ActivationResult::Fail if activation flat out failed
          */
         [[nodiscard]] auto requestActivation(ActivationContext ctx) -> ActivationResult;
