@@ -56,4 +56,7 @@ add_library(slma::moonbasepp ALIAS moonbasepp)
 
 target_include_directories(moonbasepp PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(moonbasepp PRIVATE cpr::cpr cpp-base64 nlohmann_json MbedTLS::mbedtls ${MOONBASEPP_EXTRA_LIBRARIES})
+if(WIN32)
+   target_compile_definitions(moonbasepp PRIVATE NOMINMAX=1)
+endif()
 

@@ -19,6 +19,7 @@
 #else
 #include <format>
 #endif
+#include <cmath>
 
 namespace moonbasepp {
 
@@ -159,7 +160,7 @@ namespace moonbasepp {
         return m_licensingInfo.isLicenseActive;
     }
 
-    auto Licensing::requestActivation(int numRetries, int secondsBetweenRetries) -> Licensing::ActivationResult {
+    auto Licensing::requestActivation(ActivationContext ctx) -> Licensing::ActivationResult {
         try {
 
             m_licensingInfo.offlineActivated.store(false);
@@ -193,12 +194,22 @@ namespace moonbasepp {
             const auto terminalCommand = formatImpl("{} {}", s_openWebpageCommand, browserAddr);
             system(terminalCommand.c_str());
             std::optional<cpr::Response> tokenResp;
-            const auto numTries = numRetries / secondsBetweenRetries;
             auto attemptNumber{ 0 };
-            while (!tokenResp && attemptNumber < numTries) {
+            const auto shouldRun = [&]() -> bool {
+                if (ctx.numRetries == -1) {
+                    return !tokenResp && !ctx.cancelToken.load();
+                }
+                const auto numTries = ctx.numRetries / std::max(static_cast<int>(ctx.secondsBetweenRetries), 1);
+                return !tokenResp && !ctx.cancelToken.load() && attemptNumber < numTries;
+            };
+            while (shouldRun()) {
                 tokenResp = pollRequestUrl(requestAddr);
-                std::this_thread::sleep_for(std::chrono::seconds{ secondsBetweenRetries });
+                const auto ms = static_cast<int>(ctx.secondsBetweenRetries * 1000.0);
+                std::this_thread::sleep_for(std::chrono::milliseconds{ ms });
                 ++attemptNumber;
+            }
+            if (ctx.cancelToken.load()) {
+                ctx.cancelToken.store(false);
             }
             if (!tokenResp) {
                 m_licensingInfo.isLicenseActive.store(false);

@@ -13,7 +13,7 @@
 #include <ifaddrs.h>
 #include <net/if_types.h>
 #include <mach-o/arch.h>
-#else if defined(_MSC_VER)
+#elif defined(_MSC_VER)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <intrin.h>
